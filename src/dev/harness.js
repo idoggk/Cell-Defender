@@ -1,4 +1,5 @@
 import { gap, linesEngaged } from '../game/Lane.js';
+import { rateMultiplier, reserveTotal, setFactor, clearFactor, setSlot } from '../game/Pod.js';
 
 const round = (n) => Math.round(n * 1e4) / 1e4;
 
@@ -8,12 +9,17 @@ const round = (n) => Math.round(n * 1e4) / 1e4;
  * build.
  */
 export function attachHarness(scene) {
-  const snapshot = (u) => ({ id: u.id, t: round(u.t), hp: u.hp, kind: u.kind });
+  const snapshot = (u) => ({
+    id: u.id, t: round(u.t), hp: u.hp, kind: u.kind, variant: u.variant,
+  });
 
   const h = {
     scene,
     get lane() {
       return scene.lane;
+    },
+    get pod() {
+      return scene.pod;
     },
     pause() {
       scene.paused = true;
@@ -43,6 +49,24 @@ export function attachHarness(scene) {
       scene.autoSpawn = on !== false;
       return scene.autoSpawn;
     },
+    /** Dump the marrow reserve and run hot; returns how many cells deployed. */
+    adrenaline() {
+      const n = scene.adrenaline();
+      scene.draw();
+      return n;
+    },
+    /** Set or clear a named rate factor — stands in for circulation/fever. */
+    factor(name, value) {
+      const m = value === undefined ? clearFactor(scene.pod, name) : setFactor(scene.pod, name, value);
+      scene.draw();
+      return m;
+    },
+    /** Fill or empty a pod slot. Pass no spec to clear it. */
+    slot(index, spec = null) {
+      setSlot(scene.pod, index, spec);
+      scene.draw();
+      return scene.pod.slots[index];
+    },
     reset() {
       scene.resetLane();
       scene.draw();
@@ -54,12 +78,16 @@ export function attachHarness(scene) {
     },
     state() {
       const l = scene.lane;
+      const p = scene.pod;
       const d = gap(l);
       return {
         now: l.now,
         leaked: l.leaked,
         engaged: linesEngaged(l),
         gap: d === Infinity ? null : round(d),
+        rate: round(rateMultiplier(p)),
+        reserve: reserveTotal(p),
+        filledSlots: p.slots.filter((s) => s.spec !== null).length,
         friends: l.friends.map(snapshot),
         foes: l.foes.map(snapshot),
       };

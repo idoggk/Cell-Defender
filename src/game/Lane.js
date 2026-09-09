@@ -34,6 +34,9 @@ function makeUnit(lane, spec, t) {
     id: spec.id ?? `u${lane.nextId++}`,
     type: spec.type ?? 'unit',
     kind: spec.kind === 'ranged' ? 'ranged' : 'melee',
+    // Carried through uninterpreted, for presentation. The lane does not care
+    // what a variant means; whoever built the spec does.
+    variant: spec.variant ?? null,
     t,
     hp: spec.hp,
     maxHp: spec.hp,

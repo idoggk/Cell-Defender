@@ -1,6 +1,10 @@
 import Phaser from 'phaser';
 
 import { createLane, addFoe, addFriend, step, gap, linesEngaged } from '../game/Lane.js';
+import {
+  createPod, setSlot, step as podStep, triggerAdrenaline,
+  rateMultiplier, reserveTotal,
+} from '../game/Pod.js';
 import { attachHarness } from '../dev/harness.js';
 
 export const VIEW = { w: 540, h: 960 };
@@ -12,7 +16,11 @@ const LANE = { x: VIEW.w / 2, top: 96, bottom: 772, width: 156 };
 // still an open question in DESIGN.md.
 const DEMO_FOE = { hp: 14, damage: 3, rateMs: 700, speed: 0.06 };
 const DEMO_FRIEND = { hp: 14, damage: 3, rateMs: 600, speed: 0.08 };
-const AUTO = { foeEveryMs: 2000, friendEveryMs: 2000 };
+const AUTO = { foeEveryMs: 2000 };
+
+// Only some slots filled, so the demo stays roughly contested against the
+// placeholder foe timer. Slot unlocking is an open question in DESIGN.md.
+const DEMO_FILLED_SLOTS = 3;
 
 // A frame longer than this is a stall (tab switch, breakpoint), not real time.
 // The lane model is crossing-safe at any dt, so this is about sim fidelity.
@@ -28,11 +36,19 @@ const COLOR = {
   spawn: 0x4a1f28,
   core: 0x18333d,
   foe: 0xd9534f,
+  foeBand: 0x8a3a37,
   friend: 0x4fc3d9,
+  // Left-shift bands read as visibly undercooked rather than as a status icon.
+  friendBand: 0x2f6f7d,
   hpTrack: 0x05070a,
   hpFoe: 0xe8a33d,
   hpFriend: 0x8fdc46,
   hit: 0xffffff,
+};
+
+const PALETTE = {
+  foes: { body: COLOR.foe, band: COLOR.foeBand, hp: COLOR.hpFoe },
+  friends: { body: COLOR.friend, band: COLOR.friendBand, hp: COLOR.hpFriend },
 };
 
 const laneY = (t) => LANE.top + t * (LANE.bottom - LANE.top);
@@ -58,7 +74,7 @@ export default class LaneScene extends Phaser.Scene {
     });
 
     this.add.text(16, VIEW.h - 58,
-      '[space] pause   [s] step   [f] friend   [e] foe\n[a] auto-spawn   [r] reset', {
+      '[space] pause  [s] step  [f] friend  [e] foe\n[x] adrenaline  [a] auto-foes  [r] reset', {
         fontFamily: 'monospace',
         fontSize: '13px',
         color: '#5d6b82',
@@ -73,10 +89,11 @@ export default class LaneScene extends Phaser.Scene {
 
   resetLane() {
     this.lane = createLane();
+    this.pod = createPod();
+    for (let i = 0; i < DEMO_FILLED_SLOTS; i++) setSlot(this.pod, i, DEMO_FRIEND);
     this.hits = [];
     this.deathMarks = [];
     this.foeTimer = 0;
-    this.friendTimer = 0;
   }
 
   bindKeys() {
@@ -87,6 +104,13 @@ export default class LaneScene extends Phaser.Scene {
     kb.on('keydown-E', () => { this.spawnFoe(); this.draw(); });
     kb.on('keydown-A', () => { this.autoSpawn = !this.autoSpawn; });
     kb.on('keydown-R', () => { this.resetLane(); this.draw(); });
+    kb.on('keydown-X', () => { this.adrenaline(); this.draw(); });
+  }
+
+  adrenaline() {
+    const out = triggerAdrenaline(this.pod, { livingFriends: this.lane.friends.length });
+    for (const s of out.spawns) addFriend(this.lane, s.spec);
+    return out.spawns.length;
   }
 
   spawnFriend(over = {}) {
@@ -104,12 +128,13 @@ export default class LaneScene extends Phaser.Scene {
         this.foeTimer -= AUTO.foeEveryMs;
         this.spawnFoe();
       }
-      this.friendTimer += dtMs;
-      if (this.friendTimer >= AUTO.friendEveryMs) {
-        this.friendTimer -= AUTO.friendEveryMs;
-        this.spawnFriend();
-      }
     }
+
+    const pod = podStep(this.pod, dtMs, {
+      livingFriends: this.lane.friends.length,
+      laneClear: this.lane.foes.length === 0,
+    });
+    for (const s of pod.spawns) addFriend(this.lane, s.spec);
 
     const events = step(this.lane, dtMs);
     const now = this.lane.now;
@@ -155,18 +180,20 @@ export default class LaneScene extends Phaser.Scene {
     this.add.text(LANE.x, LANE.bottom + 26, 'CORE  t=1', label).setOrigin(0.5);
   }
 
-  drawUnit(g, u, body, hpFill) {
+  drawUnit(g, u, pal) {
     const y = laneY(u.t);
+    const band = u.variant === 'band';
+    const r = band ? UNIT_R - 2 : UNIT_R;
 
-    g.fillStyle(body, 1);
-    if (u.kind === 'ranged') g.fillRect(LANE.x - UNIT_R, y - UNIT_R, UNIT_R * 2, UNIT_R * 2);
-    else g.fillCircle(LANE.x, y, UNIT_R);
+    g.fillStyle(band ? pal.band : pal.body, 1);
+    if (u.kind === 'ranged') g.fillRect(LANE.x - r, y - r, r * 2, r * 2);
+    else g.fillCircle(LANE.x, y, r);
 
     const w = 26;
     const frac = Math.max(0, Math.min(1, u.hp / u.maxHp));
     g.fillStyle(COLOR.hpTrack, 0.9);
     g.fillRect(LANE.x - w / 2, y - UNIT_R - 7, w, 3);
-    g.fillStyle(hpFill, 1);
+    g.fillStyle(pal.hp, 1);
     g.fillRect(LANE.x - w / 2, y - UNIT_R - 7, w * frac, 3);
   }
 
@@ -176,8 +203,8 @@ export default class LaneScene extends Phaser.Scene {
     const half = LANE.width / 2;
     g.clear();
 
-    for (const u of this.lane.foes) this.drawUnit(g, u, COLOR.foe, COLOR.hpFoe);
-    for (const u of this.lane.friends) this.drawUnit(g, u, COLOR.friend, COLOR.hpFriend);
+    for (const u of this.lane.foes) this.drawUnit(g, u, PALETTE.foes);
+    for (const u of this.lane.friends) this.drawUnit(g, u, PALETTE.friends);
 
     for (const h of this.hits) {
       g.lineStyle(2, COLOR.hit, Math.max(0, (h.until - now) / HIT_MS) * 0.8);
@@ -195,11 +222,14 @@ export default class LaneScene extends Phaser.Scene {
 
   readoutText() {
     const l = this.lane;
+    const p = this.pod;
     const d = gap(l);
+    const bands = l.friends.filter((u) => u.variant === 'band').length;
     return [
-      `friends ${String(l.friends.length).padStart(2)}   foes ${String(l.foes.length).padStart(2)}   leaked ${l.leaked}`,
+      `friends ${String(l.friends.length).padStart(2)}/${p.cfg.popCap}   foes ${String(l.foes.length).padStart(2)}   leaked ${l.leaked}`,
       `gap ${d === Infinity ? '   —' : d.toFixed(3)}   engaged ${linesEngaged(l) ? 'yes' : 'no '}   t+${(l.now / 1000).toFixed(1)}s`,
-      `${this.paused ? 'PAUSED' : 'running'}   auto-spawn ${this.autoSpawn ? 'on' : 'off'}`,
+      `rate x${rateMultiplier(p).toFixed(2)}   reserve ${reserveTotal(p)}   bands ${bands}`,
+      `${this.paused ? 'PAUSED' : 'running'}   auto-foes ${this.autoSpawn ? 'on' : 'off'}`,
     ].join('\n');
   }
 

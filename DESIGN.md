@@ -151,6 +151,79 @@ foe is the one with the *highest* t and the front friend the one with the *lowes
 no enemies should walk all the way to `t = 0` and park on the enemy spawn, or hold
 short of it. **Currently set to hold short (0.08). Confirm or change.**
 
+## Pod slots — implemented in `src/game/Pod.js`
+
+Pure and headless like the lane; it emits spawn descriptions and never touches
+the lane itself. Shape follows `RESEARCH_SPAWN_RATE.md`: throughput comes from
+slot **count**, not from shrinking the interval, and every rate source is
+short-lived and self-correcting.
+
+**What it does:**
+
+- **Each filled slot spawns on its own timer.** Base interval 5.5s.
+- **Marrow reserve.** A slot that *cannot* deploy stockpiles instead, up to
+  `reserveMax`. A completed cycle with a full reserve is simply lost, which caps
+  stockpiling without a separate clamp.
+- **A slot cannot deploy** when the population cap is reached, or (by default)
+  when the lane is clear — you stockpile rather than pour cells into an empty
+  corridor. That second rule dovetails with the preparation-phase decision:
+  pods bank between waves and dump when the wave starts.
+- **Adrenaline / demargination** releases the whole stockpile at once and runs at
+  2× for 8s, then pays a 0.6× trough for 15s. Released reserve cells are
+  **mature, never bands** — left shift is what happens when *production*
+  outruns maturation, and the reserve is pre-made.
+- **Left shift.** Above 1× production, a share of spawns arrive as bands at 60%
+  HP and damage, scaling with how far into the overdrive band you are. Spread
+  **deterministically by accumulated debt rather than rolled**, so a run is
+  reproducible and a player never eats an unlucky streak.
+- **The product of all rate factors is clamped to 0.5×–2.0×.** Circulation,
+  fever and hypoxia are not built — all three need something undecided (see
+  Open questions) — but they plug into the named-factor map with no refactor.
+
+**Numbers that are yours, currently placeholders** (all in `POD_DEFAULTS`):
+
+| Dial | Placeholder | Notes |
+|---|---|---|
+| `intervalMs` | 5500 | Research suggested 5–6s |
+| `slotCount` | 6 | Board art implies 9–10; unlock pacing undecided |
+| `reserveMax` | 3 | Per slot |
+| `popCap` | 12 | The blood granulocyte pool — **but see the finding below** |
+| `rateMin` / `rateMax` | 0.5 / 2.0 | Straight from the research's safe band |
+| `bandStatMul` | 0.6 | Applied to HP and damage; **not** to speed |
+| adrenaline | 2.0× / 8s, then 0.6× / 15s | |
+
+### Finding: the lane is a width-1 bottleneck, and the population cap is not the real constraint
+
+A headless replay of the demo matchup (2 minutes, placeholder stats) holds the
+front line at mid-lane and leaks nothing — but **enemies accumulate without
+bound**, 25 and still climbing at 2 minutes. The cause is structural, not a
+tuning error:
+
+**Only the front pair duels, so lane throughput is one duel at a time no matter
+how large either army is.** With the placeholder numbers a friend needs 5 hits
+at 600ms to kill a 14 HP foe — about **3s per kill, i.e. a hard ceiling of ~0.33
+kills/sec** — while foes arrive every 2s. Arrival outruns resolution, so the
+queue grows for ever. Friends sat pinned at 10–12 the whole time, meaning the
+population cap of 12 was *never the binding constraint*; the single front-line
+duel was.
+
+Three consequences worth deciding on, because they change what the roster needs
+to do:
+
+1. **Ranged fighters are not a nice-to-have, they are the only way to add damage
+   to the lane.** A melee unit behind the front line contributes literally
+   nothing. This makes the ranged/melee split a first-order roster decision
+   rather than a flavour one.
+2. **The six turret slots become the main throughput lever**, since anything that
+   wins duels faster (buff, heal, slow, weaken) raises the ceiling that army
+   size cannot. That is a strong argument *for* the "turrets never deal damage"
+   constraint — support is how you scale, so it can't feel like a tax.
+3. **The population cap does not do the anti-snowball job the research assigned
+   it** in this lane geometry, because the bottleneck binds first. It may still
+   be worth keeping as a cheap safety rail, but it is not the balancing tool.
+   Wave design has to budget total enemy HP against **duel resolution speed**,
+   not against army size.
+
 ## Open questions — not yet decided
 
 - **Which units are turrets and which are walkers**, concretely. Instinct: turrets =
