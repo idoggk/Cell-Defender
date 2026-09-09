@@ -1,5 +1,7 @@
 import { gap, linesEngaged } from '../game/Lane.js';
 import { rateMultiplier, reserveTotal, setFactor, clearFactor, setSlot } from '../game/Pod.js';
+import { setTurret, filledSlots, effects as turretEffects } from '../game/Turrets.js';
+import { PLACEHOLDER_TURRETS } from '../data/placeholders.js';
 
 const round = (n) => Math.round(n * 1e4) / 1e4;
 
@@ -21,6 +23,11 @@ export function attachHarness(scene) {
     get pod() {
       return scene.pod;
     },
+    get turrets() {
+      return scene.turrets;
+    },
+    /** All the placeholder turret specs, by name, ready to pass to h.turret(). */
+    kit: PLACEHOLDER_TURRETS,
     pause() {
       scene.paused = true;
       return 'paused';
@@ -39,6 +46,17 @@ export function attachHarness(scene) {
       const u = scene.spawnFriend(over);
       scene.draw();
       return snapshot(u);
+    },
+    ranged(over) {
+      const u = scene.spawnRanged(over);
+      scene.draw();
+      return snapshot(u);
+    },
+    /** Place a turret. Pass a spec from h.kit, or nothing to clear the slot. */
+    turret(index, spec = null) {
+      setTurret(scene.turrets, index, spec);
+      scene.draw();
+      return turretEffects(scene.turrets);
     },
     foe(over) {
       const u = scene.spawnFoe(over);
@@ -87,7 +105,8 @@ export function attachHarness(scene) {
         gap: d === Infinity ? null : round(d),
         rate: round(rateMultiplier(p)),
         reserve: reserveTotal(p),
-        filledSlots: p.slots.filter((s) => s.spec !== null).length,
+        podSlots: p.slots.filter((s) => s.spec !== null).length,
+        turrets: filledSlots(scene.turrets),
         friends: l.friends.map(snapshot),
         foes: l.foes.map(snapshot),
       };

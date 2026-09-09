@@ -92,7 +92,38 @@ export function linesEngaged(lane) {
   return gap(lane) <= lane.cfg.contact + CONTACT_EPS;
 }
 
-function advanceFoes(lane, dtMs) {
+function covers(e, u, side) {
+  if (e.side !== 'both' && e.side !== side) return false;
+  return u.t >= e.lo && u.t <= e.hi;
+}
+
+/**
+ * A unit's stat after every effect covering its position. Adds land first,
+ * then multipliers — so a +2 and a x1.5 give (base + 2) * 1.5, not base * 1.5 + 2.
+ */
+export function effectiveStat(effects, u, side, stat) {
+  let add = 0;
+  let mul = 1;
+  for (const e of effects) {
+    if (e.mods === null || e.mods === undefined) continue;
+    if (!covers(e, u, side)) continue;
+    const m = e.mods[stat];
+    if (m === undefined) continue;
+    if (m.add !== undefined) add += m.add;
+    if (m.mul !== undefined) mul *= m.mul;
+  }
+  return (u[stat] + add) * mul;
+}
+
+function healRate(effects, u, side) {
+  let rate = 0;
+  for (const e of effects) {
+    if (e.healPerSec > 0 && covers(e, u, side)) rate += e.healPerSec;
+  }
+  return rate;
+}
+
+function advanceFoes(lane, dtMs, effects) {
   const line = [...lane.foes].sort((a, b) => b.t - a.t);
   const friend = frontFriend(lane);
   const { contact, spacing } = lane.cfg;
@@ -102,14 +133,14 @@ function advanceFoes(lane, dtMs) {
     const ceiling = i === 0
       ? (friend === null ? 1 : friend.t - contact)
       : line[i - 1].t - spacing;
-    const wanted = u.t + u.speed * (dtMs / 1000);
+    const wanted = u.t + effectiveStat(effects, u, 'foes', 'speed') * (dtMs / 1000);
     // max() against the current position keeps a clamp from shoving a unit
     // backwards once it is already at or past its ceiling.
     u.t = Math.max(u.t, Math.min(wanted, ceiling));
   }
 }
 
-function advanceFriends(lane, dtMs) {
+function advanceFriends(lane, dtMs, effects) {
   const line = [...lane.friends].sort((a, b) => a.t - b.t);
   const foe = frontFoe(lane);
   const { contact, spacing, holdLine } = lane.cfg;
@@ -119,34 +150,45 @@ function advanceFriends(lane, dtMs) {
     const floor = i === 0
       ? (foe === null ? holdLine : foe.t + contact)
       : line[i - 1].t + spacing;
-    const wanted = u.t - u.speed * (dtMs / 1000);
+    const wanted = u.t - effectiveStat(effects, u, 'friends', 'speed') * (dtMs / 1000);
     u.t = Math.min(u.t, Math.max(wanted, floor));
   }
 }
 
-function attackLine(lane, line, front, target, engaged, events) {
+function attackLine(lane, line, side, front, target, engaged, effects, events) {
   if (target === null) return;
   for (const u of line) {
     const inReach = u.kind === 'ranged'
-      ? Math.abs(u.t - target.t) <= u.range
+      ? Math.abs(u.t - target.t) <= effectiveStat(effects, u, side, 'range')
       : (u === front && engaged);
     if (!inReach) continue;
     if (lane.now < u.nextAttackAt) continue;
-    u.nextAttackAt = lane.now + u.rateMs;
-    target.hp -= u.damage;
-    events.attacks.push({ by: u.id, at: target.id, damage: u.damage });
+
+    const damage = effectiveStat(effects, u, side, 'damage');
+    u.nextAttackAt = lane.now + effectiveStat(effects, u, side, 'rateMs');
+    target.hp -= damage;
+    events.attacks.push({ by: u.id, at: target.id, damage });
   }
 }
 
-function resolveAttacks(lane, events) {
+function resolveAttacks(lane, effects, events) {
   // Both sides are read before either applies damage, so a duel can kill both
   // duelists on the same frame instead of whichever line resolves first
   // winning every tie.
   const friend = frontFriend(lane);
   const foe = frontFoe(lane);
   const engaged = linesEngaged(lane);
-  attackLine(lane, lane.friends, friend, foe, engaged, events);
-  attackLine(lane, lane.foes, foe, friend, engaged, events);
+  attackLine(lane, lane.friends, 'friends', friend, foe, engaged, effects, events);
+  attackLine(lane, lane.foes, 'foes', foe, friend, engaged, effects, events);
+}
+
+function applyHealing(lane, effects, dtMs) {
+  for (const side of ['friends', 'foes']) {
+    for (const u of lane[side]) {
+      const rate = healRate(effects, u, side);
+      if (rate > 0) u.hp = Math.min(u.maxHp, u.hp + rate * (dtMs / 1000));
+    }
+  }
 }
 
 function removeDead(lane, events) {
@@ -171,17 +213,20 @@ function collectLeaks(lane, events) {
   lane.foes = held;
 }
 
-export function step(lane, dtMs) {
+export function step(lane, dtMs, effects = []) {
   lane.now += dtMs;
   const events = { attacks: [], deaths: [], leaks: [] };
 
   // Foes settle before friends so the two front units cannot pass through each
   // other on a long frame: each side clamps against the other's committed
   // position rather than against a stale one.
-  advanceFoes(lane, dtMs);
-  advanceFriends(lane, dtMs);
+  advanceFoes(lane, dtMs, effects);
+  advanceFriends(lane, dtMs, effects);
 
-  resolveAttacks(lane, events);
+  // Topped up first, then hit — so healing cannot resurrect something that the
+  // same frame's damage already took below zero.
+  applyHealing(lane, effects, dtMs);
+  resolveAttacks(lane, effects, events);
   removeDead(lane, events);
   collectLeaks(lane, events);
 

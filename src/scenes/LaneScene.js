@@ -5,6 +5,10 @@ import {
   createPod, setSlot, step as podStep, triggerAdrenaline,
   rateMultiplier, reserveTotal,
 } from '../game/Pod.js';
+import { createTurretBank, setTurret, effects as turretEffects, filledSlots } from '../game/Turrets.js';
+import {
+  PLACEHOLDER_FOE, PLACEHOLDER_FRIEND, PLACEHOLDER_RANGED, PLACEHOLDER_TURRETS,
+} from '../data/placeholders.js';
 import { attachHarness } from '../dev/harness.js';
 
 export const VIEW = { w: 540, h: 960 };
@@ -14,9 +18,15 @@ const LANE = { x: VIEW.w / 2, top: 96, bottom: 772, width: 156 };
 // Placeholder puppets, purely so there is something to watch move. These are
 // NOT roster entries and none of these numbers are proposals — the roster is
 // still an open question in DESIGN.md.
-const DEMO_FOE = { hp: 14, damage: 3, rateMs: 700, speed: 0.06 };
-const DEMO_FRIEND = { hp: 14, damage: 3, rateMs: 600, speed: 0.08 };
 const AUTO = { foeEveryMs: 2000 };
+
+// Cycled through by the number keys, one key per turret slot.
+const TURRET_CYCLE = [
+  PLACEHOLDER_TURRETS.barrier,
+  PLACEHOLDER_TURRETS.stimulant,
+  PLACEHOLDER_TURRETS.painkiller,
+  null,
+];
 
 // Only some slots filled, so the demo stays roughly contested against the
 // placeholder foe timer. Slot unlocking is an open question in DESIGN.md.
@@ -51,6 +61,14 @@ const PALETTE = {
   friends: { body: COLOR.friend, band: COLOR.friendBand, hp: COLOR.hpFriend },
 };
 
+const TURRET_COLOR = {
+  'barrier gel': 0x6f7fd9,
+  stimulant: 0xd9a34f,
+  painkiller: 0x9fd94f,
+};
+
+const FLANK_DX = LANE.width / 2 + 30;
+
 const laneY = (t) => LANE.top + t * (LANE.bottom - LANE.top);
 
 export default class LaneScene extends Phaser.Scene {
@@ -73,8 +91,10 @@ export default class LaneScene extends Phaser.Scene {
       lineSpacing: 3,
     });
 
-    this.add.text(16, VIEW.h - 58,
-      '[space] pause  [s] step  [f] friend  [e] foe\n[x] adrenaline  [a] auto-foes  [r] reset', {
+    this.add.text(16, VIEW.h - 74,
+      '[space] pause  [s] step  [f] melee  [g] ranged  [e] foe\n'
+      + '[1-6] cycle turret slot  [x] adrenaline\n'
+      + '[a] auto-foes  [r] reset', {
         fontFamily: 'monospace',
         fontSize: '13px',
         color: '#5d6b82',
@@ -90,7 +110,8 @@ export default class LaneScene extends Phaser.Scene {
   resetLane() {
     this.lane = createLane();
     this.pod = createPod();
-    for (let i = 0; i < DEMO_FILLED_SLOTS; i++) setSlot(this.pod, i, DEMO_FRIEND);
+    for (let i = 0; i < DEMO_FILLED_SLOTS; i++) setSlot(this.pod, i, PLACEHOLDER_FRIEND);
+    this.turrets = createTurretBank();
     this.hits = [];
     this.deathMarks = [];
     this.foeTimer = 0;
@@ -105,6 +126,13 @@ export default class LaneScene extends Phaser.Scene {
     kb.on('keydown-A', () => { this.autoSpawn = !this.autoSpawn; });
     kb.on('keydown-R', () => { this.resetLane(); this.draw(); });
     kb.on('keydown-X', () => { this.adrenaline(); this.draw(); });
+    kb.on('keydown-G', () => { this.spawnRanged(); this.draw(); });
+    for (let i = 0; i < 6; i++) {
+      kb.on(`keydown-${['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX'][i]}`, () => {
+        this.cycleTurret(i);
+        this.draw();
+      });
+    }
   }
 
   adrenaline() {
@@ -114,11 +142,24 @@ export default class LaneScene extends Phaser.Scene {
   }
 
   spawnFriend(over = {}) {
-    return addFriend(this.lane, { ...DEMO_FRIEND, ...over });
+    return addFriend(this.lane, { ...PLACEHOLDER_FRIEND, ...over });
+  }
+
+  spawnRanged(over = {}) {
+    return addFriend(this.lane, { ...PLACEHOLDER_RANGED, ...over });
   }
 
   spawnFoe(over = {}) {
-    return addFoe(this.lane, { ...DEMO_FOE, ...over });
+    return addFoe(this.lane, { ...PLACEHOLDER_FOE, ...over });
+  }
+
+  /** Step a slot through barrier -> stimulant -> painkiller -> empty. */
+  cycleTurret(index) {
+    const current = this.turrets.slots[index].spec;
+    const at = TURRET_CYCLE.indexOf(current);
+    const next = TURRET_CYCLE[(at + 1) % TURRET_CYCLE.length];
+    setTurret(this.turrets, index, next);
+    return next;
   }
 
   advance(dtMs) {
@@ -136,7 +177,7 @@ export default class LaneScene extends Phaser.Scene {
     });
     for (const s of pod.spawns) addFriend(this.lane, s.spec);
 
-    const events = step(this.lane, dtMs);
+    const events = step(this.lane, dtMs, turretEffects(this.turrets));
     const now = this.lane.now;
 
     // Attacks name ids, not positions, and a target can die in the same frame
@@ -178,6 +219,37 @@ export default class LaneScene extends Phaser.Scene {
     const label = { fontFamily: 'monospace', fontSize: '12px', color: '#8f9cb3' };
     this.add.text(LANE.x, LANE.top - 22, 'PATHOGENS  t=0', label).setOrigin(0.5);
     this.add.text(LANE.x, LANE.bottom + 26, 'CORE  t=1', label).setOrigin(0.5);
+
+    // Which number key drives which turret slot.
+    const key = { fontFamily: 'monospace', fontSize: '11px', color: '#6b7790' };
+    for (const slot of this.turrets.slots) {
+      const x = LANE.x + (slot.flank === 'left' ? -1 : 1) * FLANK_DX;
+      this.add.text(x, laneY(slot.t) + 18, String(slot.index + 1), key).setOrigin(0.5);
+    }
+  }
+
+  drawTurrets(g) {
+    const half = LANE.width / 2;
+    for (const slot of this.turrets.slots) {
+      const y = laneY(slot.t);
+      const x = LANE.x + (slot.flank === 'left' ? -1 : 1) * FLANK_DX;
+
+      if (slot.spec === null) {
+        g.lineStyle(2, COLOR.edge, 1);
+        g.strokeCircle(x, y, 11);
+        continue;
+      }
+
+      const c = TURRET_COLOR[slot.spec.type] ?? 0xffffff;
+      const reach = slot.spec.reach ?? this.turrets.cfg.reach;
+      const yLo = laneY(Math.max(0, slot.t - reach));
+      const yHi = laneY(Math.min(1, slot.t + reach));
+
+      g.fillStyle(c, 0.1);
+      g.fillRect(LANE.x - half, yLo, LANE.width, yHi - yLo);
+      g.fillStyle(c, 1);
+      g.fillCircle(x, y, 11);
+    }
   }
 
   drawUnit(g, u, pal) {
@@ -202,6 +274,8 @@ export default class LaneScene extends Phaser.Scene {
     const now = this.lane.now;
     const half = LANE.width / 2;
     g.clear();
+
+    this.drawTurrets(g);
 
     for (const u of this.lane.foes) this.drawUnit(g, u, PALETTE.foes);
     for (const u of this.lane.friends) this.drawUnit(g, u, PALETTE.friends);
@@ -229,7 +303,7 @@ export default class LaneScene extends Phaser.Scene {
       `friends ${String(l.friends.length).padStart(2)}/${p.cfg.popCap}   foes ${String(l.foes.length).padStart(2)}   leaked ${l.leaked}`,
       `gap ${d === Infinity ? '   —' : d.toFixed(3)}   engaged ${linesEngaged(l) ? 'yes' : 'no '}   t+${(l.now / 1000).toFixed(1)}s`,
       `rate x${rateMultiplier(p).toFixed(2)}   reserve ${reserveTotal(p)}   bands ${bands}`,
-      `${this.paused ? 'PAUSED' : 'running'}   auto-foes ${this.autoSpawn ? 'on' : 'off'}`,
+      `turrets ${filledSlots(this.turrets)}/6   ${this.paused ? 'PAUSED' : 'running'}   auto-foes ${this.autoSpawn ? 'on' : 'off'}`,
     ].join('\n');
   }
 

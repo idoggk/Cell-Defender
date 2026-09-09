@@ -207,22 +207,62 @@ queue grows for ever. Friends sat pinned at 10–12 the whole time, meaning the
 population cap of 12 was *never the binding constraint*; the single front-line
 duel was.
 
-Three consequences worth deciding on, because they change what the roster needs
-to do:
+Measured over 180s against a 0.5 foe/sec arrival rate, where 0.5 kills/sec is
+the rate needed to hold:
+
+| Setup | Kills/sec | Foes left |
+|---|---|---|
+| Melee pods, no turrets | 0.31 | 35 |
+| Melee pods + 2 barrier gel (slow) | 0.30 | 36 |
+| Melee pods + 2 stimulant (damage) | 0.31 | 35 |
+| Melee pods + 2 painkiller (heal) | 0.31 | 35 |
+| Melee pods + **all six turrets** | 0.30 | 36 |
+| **Ranged pods**, no turrets | **0.50** | **0** |
+| Ranged pods, 6 slots | 0.50 | 0 |
 
 1. **Ranged fighters are not a nice-to-have, they are the only way to add damage
    to the lane.** A melee unit behind the front line contributes literally
-   nothing. This makes the ranged/melee split a first-order roster decision
-   rather than a flavour one.
-2. **The six turret slots become the main throughput lever**, since anything that
-   wins duels faster (buff, heal, slow, weaken) raises the ceiling that army
-   size cannot. That is a strong argument *for* the "turrets never deal damage"
-   constraint — support is how you scale, so it can't feel like a tax.
+   nothing; ranged units stack additively from behind, and switching pods from
+   melee to ranged took throughput from 0.31 to arrival-capped 0.50 (real
+   capacity ~1.3/sec). This makes the ranged/melee split a first-order roster
+   decision rather than a flavour one.
+
+2. **Turrets, as currently built, contribute almost nothing — and the reason is
+   structural, not a tuning miss.** Filling all six slots moved throughput by
+   less than the noise. The cause is a feedback loop:
+
+   > **A turret that helps the front line push forward moves the front line out
+   > of its own reach.** Support in this geometry is self-cancelling.
+
+   Measured, with three fixed rows at t = 0.25 / 0.50 / 0.75 and reach ±0.12:
+   with no turrets the front friend sits at t ≈ 0.37–0.53. A stimulant on the
+   0.25 row buffed **1 of 276 swings** — its band is behind the fight. On the
+   0.50 row it buffed 48 of 276, and in doing so pushed the line up to t ≈
+   0.22–0.36, i.e. out of the band that was helping it. With all six slots
+   filled the line was driven to t ≈ 0.03–0.15 and **0 of 270 swings were
+   buffed at all**.
+
+   This is the design problem to solve before any turret content is worth
+   authoring, and it bears directly on the `holdLine` open question below.
+   `holdLine` is not a cosmetic "where does a lone fighter park" detail — **it
+   is the dial that decides whether fixed turret slots can function at all.**
+   Options, roughly in order of how much they preserve a real spatial decision:
+
+   - **Raise `holdLine` so fighters hold a line instead of charging the spawn.**
+     If the fight reliably happens in a known band, turret placement becomes a
+     genuine decision and the slots work as designed. Costs nothing — the dial
+     already exists.
+   - **Anchor reach to the front line** rather than to the slot ("affects the
+     engaged pair / front N units"). Solves it completely, but throws away the
+     spatial decision the six slots were supposed to be.
+   - **Widen reach** until turrets are effectively global auras. Simplest, and
+     it makes placement meaningless — probably the worst of the three.
+
 3. **The population cap does not do the anti-snowball job the research assigned
-   it** in this lane geometry, because the bottleneck binds first. It may still
-   be worth keeping as a cheap safety rail, but it is not the balancing tool.
-   Wave design has to budget total enemy HP against **duel resolution speed**,
-   not against army size.
+   it** in this lane geometry, because the bottleneck binds first — friends sat
+   pinned at 11–12 the whole time while foes accumulated. Keep it as a cheap
+   safety rail if you like, but it is not the balancing tool. Wave design has to
+   budget total enemy HP against **duel resolution speed**, not army size.
 
 ## Open questions — not yet decided
 
