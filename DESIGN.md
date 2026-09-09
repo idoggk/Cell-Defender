@@ -108,6 +108,49 @@ comparative data. Recorded here as current direction, not yet locked:
   penalised beyond tempo loss** — a destroyed slot re-places at base cost, no
   resistance penalty stacked on top.
 
+## Lane combat model — implemented in `src/game/Lane.js`
+
+Pure and headless: no Phaser, no DOM, a whole battle runs in Node. 12 tests in
+`test/lane.test.mjs`, run with `npm test` (zero dependencies — nothing to install).
+
+**The axis.** One number per unit: `t = 0` is the enemy spawn at the top of the
+corridor, `t = 1` is the core. Foes walk 0 → 1, friends walk 1 → 0. So the front
+foe is the one with the *highest* t and the front friend the one with the *lowest*.
+
+**Rules the model encodes:**
+
+- **Front-line duelling.** The opposing front units close until they are `contact`
+  apart, then both stop. Everyone else queues `spacing` behind the unit ahead.
+- **Melee needs to be front *and* engaged; ranged only needs a target in
+  `range`.** A ranged unit fires over its own front line at an approaching enemy
+  before contact — the old prototype got this wrong and ranged units couldn't fire
+  until melee contact, which defeated the point of ranged.
+- **Damage resolves simultaneously within a frame.** Both sides' attacks are read
+  before either applies, so a duel can kill both duellists on the same frame
+  rather than whichever line happens to resolve first winning every tie. **This is
+  a rule choice, not a technical necessity — say if you'd rather one side win ties.**
+- **A fresh unit winds up.** A newly spawned unit waits one full attack interval
+  before its first swing instead of hitting the instant it comes into reach.
+- **Foes settle before friends each frame**, so the front pair can never pass
+  through each other even on a very long frame step. Verified as an invariant
+  across frame lengths of 1–1000 ms and speeds spanning 1000×, rather than by
+  pinning one hand-found case.
+- **A leak is just `t >= 1`.** The model counts leaks and reports them; what a leak
+  *costs* (core HP, run loss) is deliberately the caller's business, not the lane's.
+
+**Numbers that are yours, currently placeholders** (all in `DEFAULTS` at the top of
+`Lane.js`, in t-units where the whole corridor is 1.0):
+
+| Dial | Placeholder | What it controls |
+|---|---|---|
+| `contact` | 0.02 | How far apart front units stand while duelling |
+| `spacing` | 0.03 | Queue gap between units in the same line |
+| `holdLine` | 0.08 | Where a friend stops when there is nothing to fight |
+
+`holdLine` was an open question from the earlier prototype — whether a fighter with
+no enemies should walk all the way to `t = 0` and park on the enemy spawn, or hold
+short of it. **Currently set to hold short (0.08). Confirm or change.**
+
 ## Open questions — not yet decided
 
 - **Which units are turrets and which are walkers**, concretely. Instinct: turrets =
