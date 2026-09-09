@@ -54,6 +54,20 @@ test('a lone friend walks up and holds short of the enemy spawn', () => {
   assert.ok(Math.abs(lane.friends[0].t - DEFAULTS.holdLine) < EPS);
 });
 
+test('a friend will not chase a foe past the hold line', () => {
+  const lane = createLane();
+  // A foe that sits still above the hold line: the friend must come up to the
+  // line and wait there rather than walking up to meet it.
+  const foe = addFoe(lane, wall({ speed: 0 }));
+  addFriend(lane, wall({ speed: 0.5 }));
+
+  run(lane, 400);
+
+  assert.ok(Math.abs(frontFriend(lane).t - DEFAULTS.holdLine) < EPS);
+  assert.equal(foe.t, 0, 'the stationary foe should not have been reached');
+  assert.equal(linesEngaged(lane), false, 'holding the line is not engagement');
+});
+
 test('a duel resolves to the stronger unit', () => {
   const lane = createLane();
   addFoe(lane, unit({ hp: 10, damage: 1 }));
@@ -117,7 +131,8 @@ test('a ranged friend fires before the lines are engaged', () => {
 
 test('a melee unit behind the front line does not attack', () => {
   const lane = createLane();
-  addFoe(lane, wall({ speed: 0 }));
+  // The foe has to walk down to the hold line, since friends no longer chase.
+  addFoe(lane, wall({ speed: 0.1 }));
   const lead = addFriend(lane, wall({ speed: 0.5, damage: 1, rateMs: 100 }));
   const rear = addFriend(lane, wall({ speed: 0.5, damage: 1, rateMs: 100 }));
 

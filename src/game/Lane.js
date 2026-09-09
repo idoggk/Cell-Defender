@@ -12,9 +12,11 @@ export const DEFAULTS = {
   contact: 0.02,
   // Minimum t-distance between consecutive units in the same line.
   spacing: 0.03,
-  // Where a friend stops when there is nothing to fight. 0 would park it on
-  // the enemy spawn itself.
-  holdLine: 0.08,
+  // The furthest up the lane friends will advance, chasing or not. This is
+  // load-bearing, not cosmetic: because the fight happens wherever the front
+  // pair meets, the hold line is what decides where the fight happens — and
+  // therefore whether a fixed turret slot can ever reach it. See DESIGN.md.
+  holdLine: 0.5,
 };
 
 export function createLane(opts = {}) {
@@ -147,8 +149,12 @@ function advanceFriends(lane, dtMs, effects) {
 
   for (let i = 0; i < line.length; i++) {
     const u = line[i];
+    // Friends hold the line rather than charging the spawn: the front friend
+    // stops at whichever is lower down the lane, the hold line or contact with
+    // the front foe. Without the hold line in this max(), a winning side chases
+    // upward indefinitely and walks out of its own turret support.
     const floor = i === 0
-      ? (foe === null ? holdLine : foe.t + contact)
+      ? Math.max(holdLine, foe === null ? holdLine : foe.t + contact)
       : line[i - 1].t + spacing;
     const wanted = u.t - effectiveStat(effects, u, 'friends', 'speed') * (dtMs / 1000);
     u.t = Math.min(u.t, Math.max(wanted, floor));

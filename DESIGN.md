@@ -145,11 +145,12 @@ foe is the one with the *highest* t and the front friend the one with the *lowes
 |---|---|---|
 | `contact` | 0.02 | How far apart front units stand while duelling |
 | `spacing` | 0.03 | Queue gap between units in the same line |
-| `holdLine` | 0.08 | Where a friend stops when there is nothing to fight |
+| `holdLine` | 0.5 | The furthest up the lane friends advance, chasing or not |
 
-`holdLine` was an open question from the earlier prototype — whether a fighter with
-no enemies should walk all the way to `t = 0` and park on the enemy spawn, or hold
-short of it. **Currently set to hold short (0.08). Confirm or change.**
+`holdLine` started as a cosmetic question — where does a fighter with no enemies
+park? — and turned out to be the most load-bearing number in the game, because it
+decides where the fight happens and therefore whether the turret slots can reach
+it. The working window is roughly **0.4–0.6**; see the placement doctrine below.
 
 ## Pod slots — implemented in `src/game/Pod.js`
 
@@ -227,36 +228,78 @@ the rate needed to hold:
    capacity ~1.3/sec). This makes the ranged/melee split a first-order roster
    decision rather than a flavour one.
 
-2. **Turrets, as currently built, contribute almost nothing — and the reason is
-   structural, not a tuning miss.** Filling all six slots moved throughput by
-   less than the noise. The cause is a feedback loop:
+2. **Turret support was self-cancelling until the hold line was made binding —
+   now fixed, and the fix turned placement into the real decision.**
 
-   > **A turret that helps the front line push forward moves the front line out
-   > of its own reach.** Support in this geometry is self-cancelling.
+   *The problem, measured before the fix:* filling all six slots moved
+   throughput by less than the noise, because **a turret that helps the front
+   line push forward moves the front line out of its own reach.** With no
+   turrets the front friend sat at t ≈ 0.37–0.53; a stimulant on the 0.25 row
+   buffed **1 of 276 swings**; on the 0.50 row it buffed 48 of 276 and in doing
+   so shoved the line up to t ≈ 0.22–0.36, out of the band helping it; with all
+   six slots filled the line was driven to t ≈ 0.03–0.15 and **0 of 270 swings
+   were buffed at all.**
 
-   Measured, with three fixed rows at t = 0.25 / 0.50 / 0.75 and reach ±0.12:
-   with no turrets the front friend sits at t ≈ 0.37–0.53. A stimulant on the
-   0.25 row buffed **1 of 276 swings** — its band is behind the fight. On the
-   0.50 row it buffed 48 of 276, and in doing so pushed the line up to t ≈
-   0.22–0.36, i.e. out of the band that was helping it. With all six slots
-   filled the line was driven to t ≈ 0.03–0.15 and **0 of 270 swings were
-   buffed at all**.
+   *The fix:* the front friend's floor is now
+   `max(holdLine, frontFoe.t + contact)`, so friends hold a line instead of
+   chasing. Note that raising `holdLine` alone would **not** have worked — the
+   old rule only consulted it when there were no foes at all, so a chasing
+   friend ignored it entirely. The rule had to change, not just the number.
 
-   This is the design problem to solve before any turret content is worth
-   authoring, and it bears directly on the `holdLine` open question below.
-   `holdLine` is not a cosmetic "where does a lone fighter park" detail — **it
-   is the dial that decides whether fixed turret slots can function at all.**
-   Options, roughly in order of how much they preserve a real spatial decision:
+   *After the fix,* with two stimulants on the row covering the hold line:
 
-   - **Raise `holdLine` so fighters hold a line instead of charging the spawn.**
-     If the fight reliably happens in a known band, turret placement becomes a
-     genuine decision and the slots work as designed. Costs nothing — the dial
-     already exists.
-   - **Anchor reach to the front line** rather than to the slot ("affects the
-     engaged pair / front N units"). Solves it completely, but throws away the
-     spatial decision the six slots were supposed to be.
-   - **Widen reach** until turrets are effectively global auras. Simplest, and
-     it makes placement meaningless — probably the worst of the three.
+   | Setup | Kills/sec | Swings buffed | Foes left |
+   |---|---|---|---|
+   | No turrets | 0.30 | 0% | 36 |
+   | 2 stimulant on the **right** row | **0.47** | **100%** | **5** |
+   | 2 stimulant on the **wrong** row | 0.30 | 0% | 36 |
+   | 2 painkiller on the right row | 0.31 | 100% | 34 |
+   | 2 barrier gel on the right row | **0.23** | — | **49** |
+
+   The front line now pins to `holdLine` exactly, so where the fight happens is
+   designed rather than emergent, and **turret placement has a right and a wrong
+   answer** — which is the spatial decision the six slots were supposed to be.
+
+### Turret placement doctrine, and why the three rows all have a job
+
+Two results above are counterintuitive enough to be worth stating as rules.
+
+**A slow field placed *on* the fight makes things worse** — barrier gel on the
+hold-line row dropped throughput below having no turret at all (0.23 vs 0.30,
+and 49 foes left vs 36). The reason: at the hold line the front friend is
+already waiting, so slowing enemies only delays their arrival at the duel. Idle
+front line, fewer duels, fewer kills. **A slow is only worth anything if
+something is damaging the enemy while it is slowed** — which means slows belong
+*upstream* of the hold line, in a band ranged units can shoot into.
+
+That gives each row a natural role, and answers the worry that pinning the line
+would leave two of three rows dead:
+
+- **Rows above the hold line:** slow / debuff, to stretch the window during
+  which ranged fire can reach enemies before they arrive.
+- **The row covering the hold line:** buffs and healing, where the duelling
+  happens.
+- **Rows below:** currently nothing, because the line never retreats. If the
+  design ever lets enemies push the line back (the PvZ knockback verb in
+  `RESEARCH_INRUN_DRAFTS.md` cuts both ways), these become the fallback zone.
+
+**Healing is a survivability lever, not a throughput one.** Painkillers moved
+kills/sec by 0.01 while buffing every swing — they keep fighters alive, they do
+not clear the lane faster. Worth knowing before pricing them against stimulants.
+
+**Where `holdLine` can sit** — swept with two stimulants on the 0.50 row
+(band 0.38–0.62):
+
+| `holdLine` | Front line | Kills/sec | Swings buffed |
+|---|---|---|---|
+| 0.1 – 0.3 | 0.22–0.36 | 0.34 | 17% |
+| **0.4 – 0.6** | **pinned** | **0.47–0.48** | **100%** |
+| 0.7 | 0.70 | 0.29 | 0% |
+
+Below ~0.4 the hold line stops binding and drift returns; above ~0.6 the fight
+leaves the turret band (and sits uncomfortably close to the core anyway).
+**Currently set to 0.5** — centred in the middle row's reach, leaving half the
+corridor as depth. Yours to move, but the working window is narrow.
 
 3. **The population cap does not do the anti-snowball job the research assigned
    it** in this lane geometry, because the bottleneck binds first — friends sat
