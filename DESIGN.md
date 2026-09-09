@@ -28,7 +28,12 @@ would be wasteful to re-derive. Their conclusions are folded into this doc.
 
 - **Enemies** spawn at the top and walk down the corridor.
 - **Pod slots (9–10)** each hold a unit that **spawns fighters continuously**, on a
-  timer. This is the Harvest King model.
+  timer. This was attributed to "the Harvest King model," but `RESEARCH_INRUN_DRAFTS.md`
+  could not confirm that Harvest King actually works this way — its documented
+  mechanic (store description) reads as a fixed-position merge-TD with a between-wave
+  shop, closer to Brotato's pattern than to continuous spawn-and-walk. The board
+  design here stands on its own regardless; the citation just needs fixing. Worth
+  confirming from Ido's own play session if he has hands-on time with the game.
 - **Fighters walk UP the lane** and, on contact with an enemy, **both stop and duel**
   until one dies. The front line moves depending on who is winning (Legion TD / Grow
   Castle).
@@ -115,8 +120,17 @@ comparative data. Recorded here as current direction, not yet locked:
   duration (±30%, including turret lifetime — ties directly into the turret-expiry
   system above). **Do not build this until the core loop is fun** — it's a meta layer
   on top of a loop that doesn't exist yet.
-- **In-run power-up draft** (Harvest King style — kill enemies, earn a choice of
-  upgrades). This is the one research pass still outstanding; see below.
+- **In-run power-up draft — direction proposed, not locked.**
+  `RESEARCH_INRUN_DRAFTS.md` recommends anchoring on Slay the Spire's forced 1-of-3
+  (or occasional 1-of-4) at wave-clear or milestone-kill triggers, *not* a shop —
+  the between-wave turret re-application beat already covers the "shop" decision
+  shape, so a second shop-shaped system would be redundant. Pricing should copy
+  Vampire Survivors' asymmetry (cheap/free Skip, metered Banish, Reroll rarest/most
+  expensive if it exists at all) rather than free rerolling, consistent with the
+  turret-pricing rule that free re-application is a tap-tax with no decision in it.
+  Rare Adaptation unlocks could use Slay the Spire's pity odds (−5% offset, +1% per
+  common seen, resets on rare, capped +40%) for a "guaranteed eventually,
+  unpredictable exactly" feel.
 - **Slot unlocking generally.** 16 lane slots is a lot to open at wave 1 — presumably
   unlocks over a run or across the meta. Turret team-slot pacing above (3→6) is
   decided; pod-slot pacing is not.
@@ -132,23 +146,47 @@ comparative data. Recorded here as current direction, not yet locked:
 
 ## Research status
 
-Two of the originally planned research passes are done and committed:
+All three research passes originally planned for this restart are done and
+committed:
 
 - `RESEARCH_SPAWN_RATE.md` — spawn-rate dial design, safe multiplier bands, real
   immunology behind it, macronutrient meta.
 - `RESEARCH_ROSTER_AND_TURRETS.md` — roster/team sizing and the dead-unit problem,
   turret expiry design (folded in above).
-
-**One more pass is planned and not yet done:** in-run power-up drafts (verify how
-Harvest King's mid-run upgrade system works; the general 1-of-3 pattern across
-Vampire Survivors/Slay the Spire/Hades/Brotato; what makes a draft pool good, e.g.
-Vampire Survivors' evolution system; then a catalogue of 25+ distinct mechanical
-verbs from Plants vs Zombies — not a plant list, the things plants *do*
-mechanically — and which of those are rare in tower defence generally).
+- `RESEARCH_INRUN_DRAFTS.md` — in-run draft shape (folded in above), plus a
+  catalogue of 27 distinct mechanical verbs from Plants vs Zombies and which of
+  them are rare enough in tower defence generally to be worth differentiating on
+  (see below). Also the source of the Harvest King citation flag above.
 
 The original handoff referenced "four passes" total without naming a fourth topic
 anywhere in the surviving docs — worth asking Ido whether one was dropped
 intentionally or just never written down.
+
+### Candidate ability verbs worth prototyping first
+
+From the PvZ verb catalogue, cross-checked against Kingdom Rush/BTD6 for rarity.
+Not decided — candidates for the first units built once a roster is scoped:
+
+- **Mind control / conversion as a turret ability.** Mechanically non-damage (it
+  flips allegiance rather than reducing HP), so it satisfies "turrets never deal
+  damage" better than almost any other option, and it's rated the single rarest
+  verb against mainstream TD. Fictional hook: opsonization/antibody-tagging that
+  turns an infected cell against its own side for a short window. Candidate for the
+  antihistamine or antibiotic turret class.
+- **Ammo/charge-limited units, reframed as "doses."** Rare in TD generally, and a
+  near-literal restatement of "medicine is inherently temporary" — where turret
+  expiry already handles *duration*, this would handle *uses*, and combining both
+  (a wave-based expiry AND a limited trigger count within its lifetime) is
+  unexplored territory here.
+- **Eat-and-remove with a vulnerability window, as a fighter ability (not a
+  turret one — this is damage-adjacent).** Maps onto the lane's existing
+  stop-and-duel resolution: a rare fighter wins a duel by removing the enemy
+  outright rather than out-damaging it, with a real cost (a second enemy arriving
+  mid-duel can freely hit it while it's occupied).
+- Terrain modification and projectile-transform-on-pass-through are rated equally
+  rare/high-opportunity but assume a tile-grid or travelling-projectile board that
+  doesn't map cleanly onto the single-corridor lane — parked for a possible future
+  board variant rather than a first prototype.
 
 ## Opinions on record (not decisions)
 
